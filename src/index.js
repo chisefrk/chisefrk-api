@@ -244,7 +244,7 @@ function base64urlEncode(value) {
   const bytes =
     typeof value === "string"
       ? new TextEncoder().encode(value)
-      : value;
+      : new Uint8Array(value);
 
   let binary = "";
 
