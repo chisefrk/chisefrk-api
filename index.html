@@ -1,0 +1,444 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <title>CHISEFRK API</title>
+  <meta
+    name="description"
+    content="CHISEFRK API platform for developers."
+  >
+
+  <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+
+  <header class="navbar">
+    <a href="#/" class="brand">CHISEFRK</a>
+
+    <nav>
+      <a href="#/">HOME</a>
+      <a href="#/docs">DOCS</a>
+      <a href="#/updates">UPDATES</a>
+      <a href="#/support">SUPPORT</a>
+    </nav>
+
+    <a href="#/login" class="login-button">LOGIN</a>
+  </header>
+
+
+  <main>
+
+    <!-- HOME -->
+    <section class="page" data-route="/">
+
+      <div class="hero">
+
+        <div class="eyebrow">
+          CHISEFRK / API PLATFORM
+        </div>
+
+        <h1>
+          BUILD WITH<br>
+          <span>CHISEFRK.</span>
+        </h1>
+
+        <p class="hero-description">
+          Simple APIs and developer tools built for projects
+          that actually need them.
+        </p>
+
+        <div class="hero-actions">
+          <a href="#/docs" class="button button-primary">
+            VIEW DOCUMENTATION
+          </a>
+
+          <a href="#/login" class="button button-secondary">
+            GET STARTED
+          </a>
+        </div>
+
+      </div>
+
+
+      <section class="stats">
+
+        <div class="stat">
+          <span id="home-api-count">--</span>
+          <small>AVAILABLE APIs</small>
+        </div>
+
+        <div class="stat">
+          <span>FREE</span>
+          <small>STARTING TIER</small>
+        </div>
+
+        <div class="stat">
+          <span>v1.0</span>
+          <small>PLATFORM</small>
+        </div>
+
+      </section>
+
+
+      <section class="home-section">
+
+        <div class="section-heading">
+          <span>01</span>
+          <h2>API SERVICES</h2>
+        </div>
+
+        <div id="home-api-list" class="service-grid">
+          <div class="loading">
+            Loading services...
+          </div>
+        </div>
+
+      </section>
+
+    </section>
+
+
+    <!-- DOCS -->
+    <section class="page" data-route="/docs">
+
+      <div class="page-header">
+        <div class="eyebrow">CHISEFRK / DOCUMENTATION</div>
+
+        <h1>DOCUMENTATION</h1>
+
+        <p>
+          Everything you need to connect your project
+          to CHISEFRK APIs.
+        </p>
+      </div>
+
+
+      <div class="docs-layout">
+
+        <aside class="docs-sidebar">
+
+          <a href="#docs-start">Getting Started</a>
+          <a href="#docs-auth">Authentication</a>
+          <a href="#docs-keys">API Keys</a>
+          <a href="#docs-limits">Rate Limits</a>
+
+          <div class="sidebar-label">
+            SERVICES
+          </div>
+
+          <div id="docs-nav">
+            Loading...
+          </div>
+
+        </aside>
+
+
+        <div class="docs-content">
+
+          <article id="docs-start" class="doc-block">
+
+            <span class="doc-number">01</span>
+
+            <h2>GETTING STARTED</h2>
+
+            <p>
+              CHISEFRK provides HTTP APIs that can be used
+              from websites, applications, bots, scripts,
+              and other services.
+            </p>
+
+            <div class="code-block">
+              <span>BASE URL</span>
+              <code>
+                https://chisefrk-api.chisefrk.workers.dev
+              </code>
+            </div>
+
+          </article>
+
+
+          <article id="docs-auth" class="doc-block">
+
+            <span class="doc-number">02</span>
+
+            <h2>AUTHENTICATION</h2>
+
+            <p>
+              Public APIs may be available without
+              authentication. Protected services will
+              require a CHISEFRK API key.
+            </p>
+
+            <div class="code-block">
+              <span>EXAMPLE</span>
+              <code>
+                Authorization: Bearer YOUR_API_KEY
+              </code>
+            </div>
+
+          </article>
+
+
+          <article id="docs-keys" class="doc-block">
+
+            <span class="doc-number">03</span>
+
+            <h2>API KEYS</h2>
+
+            <p>
+              API keys will be managed from your CHISEFRK
+              dashboard. Each key can later be associated
+              with usage limits and enabled services.
+            </p>
+
+            <div class="notice">
+              API key management is coming with the
+              authentication system.
+            </div>
+
+          </article>
+
+
+          <article id="docs-limits" class="doc-block">
+
+            <span class="doc-number">04</span>
+
+            <h2>RATE LIMITS</h2>
+
+            <p>
+              Free and premium services may have different
+              request limits. Limits will be displayed
+              here when the usage system is active.
+            </p>
+
+          </article>
+
+
+          <section class="doc-services">
+
+            <div class="section-heading">
+              <span>05</span>
+              <h2>AVAILABLE SERVICES</h2>
+            </div>
+
+            <div id="docs-api-list">
+              <div class="loading">
+                Loading documentation...
+              </div>
+            </div>
+
+          </section>
+
+        </div>
+
+      </div>
+
+    </section>
+
+
+    <!-- UPDATES -->
+    <section class="page" data-route="/updates">
+
+      <div class="page-header">
+        <div class="eyebrow">CHISEFRK / CHANGELOG</div>
+
+        <h1>UPDATES</h1>
+
+        <p>
+          New APIs, platform changes, fixes and other
+          questionable decisions documented here.
+        </p>
+      </div>
+
+
+      <div class="updates-list">
+
+        <article class="update">
+
+          <div class="update-date">
+            22 SEP 2026
+          </div>
+
+          <div class="update-content">
+
+            <div class="update-version">
+              v1.0.0
+            </div>
+
+            <h2>API PLATFORM INITIAL RELEASE</h2>
+
+            <ul>
+              <li>Added Random Username API</li>
+              <li>Added Random Quote API</li>
+              <li>Added Random Color API</li>
+              <li>Added automatic API registry</li>
+              <li>Added dynamic documentation</li>
+            </ul>
+
+          </div>
+
+        </article>
+
+
+        <article class="update">
+
+          <div class="update-date">
+            COMING SOON
+          </div>
+
+          <div class="update-content">
+
+            <div class="update-version">
+              NEXT
+            </div>
+
+            <h2>PLATFORM SERVICES</h2>
+
+            <ul>
+              <li>User authentication</li>
+              <li>API key management</li>
+              <li>Usage tracking</li>
+              <li>Free API tier</li>
+              <li>Premium API tier</li>
+            </ul>
+
+          </div>
+
+        </article>
+
+      </div>
+
+    </section>
+
+
+    <!-- SUPPORT -->
+    <section class="page" data-route="/support">
+
+      <div class="page-header">
+
+        <div class="eyebrow">
+          CHISEFRK / SUPPORT
+        </div>
+
+        <h1>SUPPORT</h1>
+
+        <p>
+          Need help with an API, integration or account?
+          Start here.
+        </p>
+
+      </div>
+
+
+      <div class="support-grid">
+
+        <a href="https://github.com/chisefrk/chisefrk-api"
+           target="_blank"
+           class="support-card">
+
+          <span class="support-label">
+            SOURCE
+          </span>
+
+          <h2>GITHUB</h2>
+
+          <p>
+            Source code, issues and development.
+          </p>
+
+          <span class="support-arrow">↗</span>
+
+        </a>
+
+
+        <a href="#/docs" class="support-card">
+
+          <span class="support-label">
+            DOCUMENTATION
+          </span>
+
+          <h2>API DOCS</h2>
+
+          <p>
+            Read endpoint documentation and examples.
+          </p>
+
+          <span class="support-arrow">↗</span>
+
+        </a>
+
+
+        <div class="support-card">
+
+          <span class="support-label">
+            CONTACT
+          </span>
+
+          <h2>CHISEFRK</h2>
+
+          <p>
+            Direct support channels will be added
+            with the account system.
+          </p>
+
+          <span class="support-arrow">—</span>
+
+        </div>
+
+      </div>
+
+    </section>
+
+
+    <!-- LOGIN PLACEHOLDER -->
+    <section class="page" data-route="/login">
+
+      <div class="auth-page">
+
+        <div class="eyebrow">
+          CHISEFRK / ACCOUNT
+        </div>
+
+        <h1>LOGIN</h1>
+
+        <p>
+          Authentication is being built.
+        </p>
+
+        <div class="notice">
+          Account registration, API keys and dashboard
+          access will be connected after the platform
+          database and authentication layer are ready.
+        </div>
+
+        <a href="#/" class="button button-secondary">
+          BACK HOME
+        </a>
+
+      </div>
+
+    </section>
+
+  </main>
+
+
+  <footer>
+
+    <div>
+      CHISEFRK API
+    </div>
+
+    <div>
+      API PLATFORM / 2026
+    </div>
+
+  </footer>
+
+
+  <script src="script.js"></script>
+
+</body>
+</html>
