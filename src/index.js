@@ -93,6 +93,17 @@ const endpoints = [
     endpoint: "/api/auth/register",
     description: "Create a CHISEFRK account",
     category: "Authentication",
+    status: "stable",
+    example: {
+      email: "user@example.com",
+      password: "your-password"
+    }
+  },
+  {
+    method: "POST",
+    endpoint: "/api/auth/login",
+    description: "Login to a CHISEFRK account",
+    category: "Authentication",
     status: "beta",
     example: {
       email: "user@example.com",
@@ -108,7 +119,7 @@ function json(data, status = 200) {
       "Content-Type": "application/json; charset=utf-8",
       "Access-Control-Allow-Origin": "*",
       "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-      "Access-Control-Allow-Headers": "Content-Type"
+      "Access-Control-Allow-Headers": "Content-Type, Authorization"
     }
   });
 }
@@ -140,12 +151,14 @@ function hexToBytes(hex) {
   return bytes;
 }
 
-async function hashPassword(password) {
+async function hashPassword(password, salt = null) {
   const encoder = new TextEncoder();
 
-  const salt = crypto.getRandomValues(
-    new Uint8Array(16)
-  );
+  const passwordSalt =
+    salt ||
+    crypto.getRandomValues(
+      new Uint8Array(16)
+    );
 
   const keyMaterial =
     await crypto.subtle.importKey(
@@ -162,6 +175,57 @@ async function hashPassword(password) {
     await crypto.subtle.deriveBits(
       {
         name: "PBKDF2",
+        salt: passwordSalt,
+        iterations,
+        hash: "SHA-256"
+      },
+      keyMaterial,
+      256
+    );
+
+  return {
+    iterations,
+    salt: bytesToHex(passwordSalt),
+    hash: bytesToHex(derivedBits)
+  };
+}
+
+async function verifyPassword(password, storedHash) {
+  const parts = storedHash.split("$");
+
+  if (
+    parts.length !== 4 ||
+    parts[0] !== "pbkdf2"
+  ) {
+    return false;
+  }
+
+  const iterations = Number(parts[1]);
+  const salt = hexToBytes(parts[2]);
+  const expectedHash = parts[3];
+
+  if (
+    !Number.isInteger(iterations) ||
+    !expectedHash
+  ) {
+    return false;
+  }
+
+  const encoder = new TextEncoder();
+
+  const keyMaterial =
+    await crypto.subtle.importKey(
+      "raw",
+      encoder.encode(password),
+      "PBKDF2",
+      false,
+      ["deriveBits"]
+    );
+
+  const derivedBits =
+    await crypto.subtle.deriveBits(
+      {
+        name: "PBKDF2",
         salt,
         iterations,
         hash: "SHA-256"
@@ -170,12 +234,69 @@ async function hashPassword(password) {
       256
     );
 
-  return [
-    "pbkdf2",
-    iterations,
-    bytesToHex(salt),
-    bytesToHex(derivedBits)
-  ].join("$");
+  const actualHash =
+    bytesToHex(derivedBits);
+
+  return actualHash === expectedHash;
+}
+
+function base64urlEncode(value) {
+  const bytes =
+    typeof value === "string"
+      ? new TextEncoder().encode(value)
+      : value;
+
+  let binary = "";
+
+  for (const byte of bytes) {
+    binary += String.fromCharCode(byte);
+  }
+
+  return btoa(binary)
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/, "");
+}
+
+async function signToken(payload, secret) {
+  const header = {
+    alg: "HS256",
+    typ: "JWT"
+  };
+
+  const encodedHeader =
+    base64urlEncode(
+      JSON.stringify(header)
+    );
+
+  const encodedPayload =
+    base64urlEncode(
+      JSON.stringify(payload)
+    );
+
+  const data =
+    `${encodedHeader}.${encodedPayload}`;
+
+  const key =
+    await crypto.subtle.importKey(
+      "raw",
+      new TextEncoder().encode(secret),
+      {
+        name: "HMAC",
+        hash: "SHA-256"
+      },
+      false,
+      ["sign"]
+    );
+
+  const signature =
+    await crypto.subtle.sign(
+      "HMAC",
+      key,
+      new TextEncoder().encode(data)
+    );
+
+  return `${data}.${base64urlEncode(signature)}`;
 }
 
 async function register(request, env) {
@@ -236,6 +357,13 @@ async function register(request, env) {
   const passwordHash =
     await hashPassword(password);
 
+  const storedHash = [
+    "pbkdf2",
+    passwordHash.iterations,
+    passwordHash.salt,
+    passwordHash.hash
+  ].join("$");
+
   const result =
     await env.chisefrk_db
       .prepare(
@@ -243,7 +371,7 @@ async function register(request, env) {
           (email, password_hash)
          VALUES (?, ?)`
       )
-      .bind(email, passwordHash)
+      .bind(email, storedHash)
       .run();
 
   return json({
@@ -257,6 +385,111 @@ async function register(request, env) {
   }, 201);
 }
 
+async function login(request, env) {
+  let body;
+
+  try {
+    body = await request.json();
+  } catch {
+    return json({
+      status: 400,
+      success: false,
+      error: "Invalid JSON body"
+    }, 400);
+  }
+
+  const email =
+    typeof body.email === "string"
+      ? normalizeEmail(body.email)
+      : "";
+
+  const password =
+    typeof body.password === "string"
+      ? body.password
+      : "";
+
+  if (!email || !password) {
+    return json({
+      status: 400,
+      success: false,
+      error: "Email and password are required"
+    }, 400);
+  }
+
+  const user =
+    await env.chisefrk_db
+      .prepare(
+        `SELECT id, email, password_hash
+         FROM users
+         WHERE email = ?
+         LIMIT 1`
+      )
+      .bind(email)
+      .first();
+
+  if (!user) {
+    return json({
+      status: 401,
+      success: false,
+      error: "Invalid email or password"
+    }, 401);
+  }
+
+  const valid =
+    await verifyPassword(
+      password,
+      user.password_hash
+    );
+
+  if (!valid) {
+    return json({
+      status: 401,
+      success: false,
+      error: "Invalid email or password"
+    }, 401);
+  }
+
+  if (!env.AUTH_SECRET) {
+    return json({
+      status: 500,
+      success: false,
+      error: "Authentication secret is not configured"
+    }, 500);
+  }
+
+  const now =
+    Math.floor(Date.now() / 1000);
+
+  const expiresIn =
+    60 * 60 * 24 * 7;
+
+  const token =
+    await signToken(
+      {
+        sub: String(user.id),
+        email: user.email,
+        iat: now,
+        exp: now + expiresIn
+      },
+      env.AUTH_SECRET
+    );
+
+  return json({
+    status: 200,
+    success: true,
+    message: "Login successful",
+    data: {
+      token,
+      token_type: "Bearer",
+      expires_in: expiresIn,
+      user: {
+        id: user.id,
+        email: user.email
+      }
+    }
+  });
+}
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
@@ -266,7 +499,7 @@ export default {
         headers: {
           "Access-Control-Allow-Origin": "*",
           "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-          "Access-Control-Allow-Headers": "Content-Type"
+          "Access-Control-Allow-Headers": "Content-Type, Authorization"
         }
       });
     }
@@ -368,6 +601,13 @@ export default {
       request.method === "POST"
     ) {
       return register(request, env);
+    }
+
+    if (
+      url.pathname === "/api/auth/login" &&
+      request.method === "POST"
+    ) {
+      return login(request, env);
     }
 
     return json({
