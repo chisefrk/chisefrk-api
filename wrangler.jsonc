@@ -1,12 +1,12 @@
 {
-	"name": "chisefrk-api",
-	"main": "src/index.js",
-	"compatibility_date": "2026-09-22",
-	"d1_databases": [
-		{
-			"binding": "chisefrk_db",
-			"database_name": "chisefrk-db",
-			"database_id": "5826419f-0e3a-47cf-8660-4cae3432279b"
-		}
-	]
+  "name": "chisefrk-apii",
+  "main": "src/index.js",
+  "compatibility_date": "2026-09-22",
+  "d1_databases": [
+    {
+      "binding": "chisefrk_db",
+      "database_name": "chisefrk-db",
+      "database_id": "5826419f-0e3a-47cf-8660-4cae3432279b"
+    }
+  ]
 }
