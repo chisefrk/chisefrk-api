@@ -1,4 +1,4 @@
-const API_BASE = "https://chisefrk-api.chisefrk.workers.dev";
+const API_BASE = "https://chisefrk-apii.chisefrk.workers.dev";
 
 const pages = document.querySelectorAll(".page");
 
@@ -7,8 +7,22 @@ function normalizeRoute() {
   return hash.replace(/^#/, "") || "/";
 }
 
+function isLoggedIn() {
+  return Boolean(sessionStorage.getItem("chisefrk_token"));
+}
+
 function renderRoute() {
-  const route = normalizeRoute();
+  let route = normalizeRoute();
+
+  if (route === "/dashboard" && !isLoggedIn()) {
+    window.location.hash = "#/login";
+    return;
+  }
+
+  if (route === "/login" && isLoggedIn()) {
+    window.location.hash = "#/dashboard";
+    return;
+  }
 
   pages.forEach(page => {
     page.classList.toggle(
@@ -30,6 +44,35 @@ function renderRoute() {
   window.scrollTo({
     top: 0,
     behavior: "instant"
+  });
+
+  updateAuthUI();
+}
+
+function updateAuthUI() {
+  const loggedIn = isLoggedIn();
+
+  const dashboardEmail =
+    document.querySelector("#dashboard-email");
+
+  if (dashboardEmail) {
+    dashboardEmail.textContent =
+      sessionStorage.getItem("chisefrk_email") || "";
+  }
+
+  const loginLinks =
+    document.querySelectorAll("[data-login-link]");
+
+  loginLinks.forEach(link => {
+    link.textContent = loggedIn ? "DASHBOARD" : "LOGIN";
+    link.href = loggedIn ? "#/dashboard" : "#/login";
+  });
+
+  const logoutButtons =
+    document.querySelectorAll("[data-logout]");
+
+  logoutButtons.forEach(button => {
+    button.style.display = loggedIn ? "" : "none";
   });
 }
 
@@ -53,15 +96,12 @@ function createServiceCard(api) {
   const card = document.createElement("a");
 
   card.href = "#/docs";
-
   card.className = "service-card";
 
   card.innerHTML = `
     <span class="method">${api.method}</span>
     <span class="category">${api.category || "API"}</span>
-
     <h3>${api.endpoint}</h3>
-
     <code>${api.description}</code>
   `;
 
@@ -87,13 +127,10 @@ async function loadHome() {
     container.innerHTML = "";
 
     result.data.forEach(api => {
-      container.appendChild(
-        createServiceCard(api)
-      );
+      container.appendChild(createServiceCard(api));
     });
 
   } catch (error) {
-
     container.innerHTML = `
       <div class="error">
         Failed to load API services.
@@ -108,11 +145,11 @@ function createDocCard(api) {
   const article = document.createElement("article");
 
   article.className = "doc-api";
-  
+
   article.id = `api-${api.endpoint.replace(
-  /[^a-zA-Z0-9]/g,
-  "-"
-)}`;
+    /[^a-zA-Z0-9]/g,
+    "-"
+  )}`;
 
   article.innerHTML = `
     <div class="doc-api-top">
@@ -162,14 +199,10 @@ async function loadDocs() {
     }
 
     result.data.forEach(api => {
-
-      docs.appendChild(
-        createDocCard(api)
-      );
+      docs.appendChild(createDocCard(api));
 
       if (nav) {
-        const link =
-          document.createElement("a");
+        const link = document.createElement("a");
 
         link.href =
           `#api-${api.endpoint.replace(
@@ -177,15 +210,13 @@ async function loadDocs() {
             "-"
           )}`;
 
-        link.textContent =
-          api.endpoint;
+        link.textContent = api.endpoint;
 
         nav.appendChild(link);
       }
     });
 
   } catch (error) {
-
     docs.innerHTML = `
       <div class="error">
         Failed to load documentation.
@@ -196,11 +227,112 @@ async function loadDocs() {
   }
 }
 
+async function handleLogin(event) {
+  event.preventDefault();
+
+  const form = event.currentTarget;
+  const email = form.email.value.trim();
+  const password = form.password.value;
+
+  const button =
+    form.querySelector("button[type='submit']");
+
+  const message =
+    document.querySelector("#login-message");
+
+  button.disabled = true;
+  button.textContent = "AUTHENTICATING...";
+
+  if (message) {
+    message.textContent = "";
+    message.className = "auth-message";
+  }
+
+  try {
+    const response = await fetch(
+      `${API_BASE}/api/auth/login`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          email,
+          password
+        })
+      }
+    );
+
+    const result = await response.json();
+
+    if (!response.ok || !result.success) {
+      throw new Error(
+        result.error ||
+        result.message ||
+        "Login failed"
+      );
+    }
+
+    sessionStorage.setItem(
+      "chisefrk_token",
+      result.data.token
+    );
+
+    sessionStorage.setItem(
+      "chisefrk_email",
+      email
+    );
+
+    window.location.hash = "#/dashboard";
+
+  } catch (error) {
+    if (message) {
+      message.textContent = error.message;
+      message.className = "auth-message error";
+    }
+
+    console.error(error);
+
+  } finally {
+    button.disabled = false;
+    button.textContent = "LOGIN";
+  }
+}
+
+function handleLogout() {
+  sessionStorage.removeItem("chisefrk_token");
+  sessionStorage.removeItem("chisefrk_email");
+
+  window.location.hash = "#/login";
+}
+
+function setupAuth() {
+  const form =
+    document.querySelector("#login-form");
+
+  if (form) {
+    form.addEventListener(
+      "submit",
+      handleLogin
+    );
+  }
+
+  document
+    .querySelectorAll("[data-logout]")
+    .forEach(button => {
+      button.addEventListener(
+        "click",
+        handleLogout
+      );
+    });
+}
+
 window.addEventListener(
   "hashchange",
   renderRoute
 );
 
+setupAuth();
 renderRoute();
 loadHome();
 loadDocs();
