@@ -8,7 +8,7 @@ function normalizeRoute() {
 }
 
 function isLoggedIn() {
-  return Boolean(sessionStorage.getItem("chisefrk_token"));
+  return Boolean(localStorage.getItem("chisefrk_token"));
 }
 
 function renderRoute() {
@@ -64,7 +64,7 @@ function updateAuthUI() {
 
   if (dashboardEmail) {
     dashboardEmail.textContent =
-      sessionStorage.getItem("chisefrk_email") || "";
+      localStorage.getItem("chisefrk_email") || "";
   }
 
   const loginLinks =
@@ -280,12 +280,12 @@ async function handleLogin(event) {
       );
     }
 
-    sessionStorage.setItem(
+    localStorage.setItem(
       "chisefrk_token",
       result.data.token
     );
 
-    sessionStorage.setItem(
+    localStorage.setItem(
       "chisefrk_email",
       email
     );
@@ -307,8 +307,8 @@ async function handleLogin(event) {
 }
 
 function handleLogout() {
-  sessionStorage.removeItem("chisefrk_token");
-  sessionStorage.removeItem("chisefrk_email");
+  localStorage.removeItem("chisefrk_token");
+  localStorage.removeItem("chisefrk_email");
 
   window.location.hash = "#/login";
 }
@@ -316,7 +316,7 @@ function handleLogout() {
 
 async function apiRequest(path, options = {}) {
   const token =
-    sessionStorage.getItem("chisefrk_token");
+    localStorage.getItem("chisefrk_token");
 
   if (!token) {
     throw new Error("Authentication required");
@@ -351,8 +351,8 @@ async function apiRequest(path, options = {}) {
     response.status === 401 ||
     response.status === 403
   ) {
-    sessionStorage.removeItem("chisefrk_token");
-    sessionStorage.removeItem("chisefrk_email");
+    localStorage.removeItem("chisefrk_token");
+    localStorage.removeItem("chisefrk_email");
     window.location.hash = "#/login";
 
     throw new Error(
