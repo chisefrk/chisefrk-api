@@ -47,6 +47,13 @@ function renderRoute() {
   });
 
   updateAuthUI();
+
+  if (
+    route === "/dashboard" &&
+    isLoggedIn()
+  ) {
+    loadApiKeys();
+  }
 }
 
 function updateAuthUI() {
@@ -540,7 +547,9 @@ async function loadApiKeys() {
       await apiRequest("/api/keys");
 
     renderApiKeys(
-      result.data?.keys || []
+      Array.isArray(result.data)
+        ? result.data
+        : []
     );
 
   } catch (error) {
@@ -778,8 +787,6 @@ function setupDashboard() {
       createApiKey
     );
   }
-
-  loadApiKeys();
 }
 
 function setupAuth() {

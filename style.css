@@ -994,3 +994,96 @@ footer {
     width: 100%;
   }
 }
+
+.navbar {
+  width: 100%;
+  max-width: none;
+  padding: 18px 24px;
+}
+
+.navbar-inner {
+  width: 100%;
+  max-width: var(--max);
+  margin: 0 auto;
+
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+}
+
+.navbar nav {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 24px;
+  flex-wrap: wrap;
+}
+
+@media (max-width: 800px) {
+  .navbar {
+    padding: 16px 18px;
+  }
+
+  .navbar-inner {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 14px;
+  }
+
+  .navbar nav {
+    width: 100%;
+    justify-content: flex-start;
+    gap: 14px;
+    overflow-x: auto;
+    flex-wrap: nowrap;
+    padding-bottom: 4px;
+  }
+
+  .navbar nav a {
+    flex: 0 0 auto;
+    font-size: 10px;
+  }
+}
+
+@media (max-width: 500px) {
+  main {
+    padding: 0 16px;
+  }
+
+  .navbar {
+    padding: 14px 16px;
+  }
+
+  .navbar-inner {
+    gap: 12px;
+  }
+
+  .navbar nav {
+    gap: 12px;
+  }
+
+  .navbar nav a {
+    font-size: 9px;
+  }
+
+  .hero h1 {
+    font-size: clamp(48px, 17vw, 72px);
+  }
+
+  .page-header h1 {
+    font-size: clamp(46px, 15vw, 72px);
+  }
+
+  .auth-box {
+    padding: 24px 20px;
+  }
+
+  .dashboard-page {
+    padding: 45px 0;
+  }
+
+  .dashboard-header h1 {
+    font-size: clamp(44px, 15vw, 64px);
+  }
+}
