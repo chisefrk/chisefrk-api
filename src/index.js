@@ -299,6 +299,339 @@ async function signToken(payload, secret) {
   return `${data}.${base64urlEncode(signature)}`;
 }
 
+function base64urlDecode(value) {
+  const base64 =
+    value
+      .replace(/-/g, "+")
+      .replace(/_/g, "/");
+
+  const padded =
+    base64 + "=".repeat(
+      (4 - (base64.length % 4)) % 4
+    );
+
+  const binary = atob(padded);
+
+  const bytes =
+    new Uint8Array(binary.length);
+
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+
+  return bytes;
+}
+
+function constantTimeEqual(a, b) {
+  if (a.length !== b.length) {
+    return false;
+  }
+
+  let result = 0;
+
+  for (let i = 0; i < a.length; i++) {
+    result |= a[i] ^ b[i];
+  }
+
+  return result === 0;
+}
+
+async function verifyToken(token, secret) {
+  try {
+    const parts = token.split(".");
+
+    if (parts.length !== 3) {
+      return null;
+    }
+
+    const [
+      encodedHeader,
+      encodedPayload,
+      encodedSignature
+    ] = parts;
+
+    const data =
+      `${encodedHeader}.${encodedPayload}`;
+
+    const key =
+      await crypto.subtle.importKey(
+        "raw",
+        new TextEncoder().encode(secret),
+        {
+          name: "HMAC",
+          hash: "SHA-256"
+        },
+        false,
+        ["verify"]
+      );
+
+    const signature =
+      base64urlDecode(encodedSignature);
+
+    const valid =
+      await crypto.subtle.verify(
+        "HMAC",
+        key,
+        signature,
+        new TextEncoder().encode(data)
+      );
+
+    if (!valid) {
+      return null;
+    }
+
+    const payload =
+      JSON.parse(
+        new TextDecoder().decode(
+          base64urlDecode(encodedPayload)
+        )
+      );
+
+    if (
+      !payload.sub ||
+      !payload.exp ||
+      payload.exp <= Math.floor(Date.now() / 1000)
+    ) {
+      return null;
+    }
+
+    return payload;
+
+  } catch {
+    return null;
+  }
+}
+
+async function requireAuth(request, env) {
+  if (!env.AUTH_SECRET) {
+    return {
+      error: json({
+        status: 500,
+        success: false,
+        error: "Authentication secret is not configured"
+      }, 500)
+    };
+  }
+
+  const header =
+    request.headers.get("Authorization") || "";
+
+  if (!header.startsWith("Bearer ")) {
+    return {
+      error: json({
+        status: 401,
+        success: false,
+        error: "Authorization token is required"
+      }, 401)
+    };
+  }
+
+  const token =
+    header.slice(7).trim();
+
+  if (!token) {
+    return {
+      error: json({
+        status: 401,
+        success: false,
+        error: "Authorization token is required"
+      }, 401)
+    };
+  }
+
+  const payload =
+    await verifyToken(
+      token,
+      env.AUTH_SECRET
+    );
+
+  if (!payload) {
+    return {
+      error: json({
+        status: 401,
+        success: false,
+        error: "Invalid or expired token"
+      }, 401)
+    };
+  }
+
+  return {
+    user: {
+      id: Number(payload.sub),
+      email: payload.email
+    }
+  };
+}
+
+async function hashApiKey(value) {
+  const data =
+    new TextEncoder().encode(value);
+
+  const digest =
+    await crypto.subtle.digest(
+      "SHA-256",
+      data
+    );
+
+  return base64urlEncode(digest);
+}
+
+function generateApiKey() {
+  const bytes =
+    crypto.getRandomValues(
+      new Uint8Array(32)
+    );
+
+  return `sk-chisefrk-${base64urlEncode(bytes)}`;
+}
+
+async function createApiKey(request, env) {
+  const auth =
+    await requireAuth(request, env);
+
+  if (auth.error) {
+    return auth.error;
+  }
+
+  let body = {};
+
+  try {
+    body = await request.json();
+  } catch {
+    body = {};
+  }
+
+  const name =
+    typeof body.name === "string"
+      ? body.name.trim()
+      : "";
+
+  if (!name) {
+    return json({
+      status: 400,
+      success: false,
+      error: "API key name is required"
+    }, 400);
+  }
+
+  if (name.length > 50) {
+    return json({
+      status: 400,
+      success: false,
+      error: "API key name must be 50 characters or less"
+    }, 400);
+  }
+
+  const apiKey =
+    generateApiKey();
+
+  const keyHash =
+    await hashApiKey(apiKey);
+
+  const result =
+    await env.chisefrk_db
+      .prepare(
+        `INSERT INTO api_keys
+          (user_id, name, key_hash)
+         VALUES (?, ?, ?)`
+      )
+      .bind(
+        auth.user.id,
+        name,
+        keyHash
+      )
+      .run();
+
+  return json({
+    status: 201,
+    success: true,
+    message: "API key created successfully",
+    data: {
+      id: result.meta.last_row_id,
+      name,
+      key: apiKey,
+      warning: "Store this API key securely. It will not be shown again."
+    }
+  }, 201);
+}
+
+async function listApiKeys(request, env) {
+  const auth =
+    await requireAuth(request, env);
+
+  if (auth.error) {
+    return auth.error;
+  }
+
+  const result =
+    await env.chisefrk_db
+      .prepare(
+        `SELECT
+          id,
+          name,
+          created_at,
+          last_used_at
+         FROM api_keys
+         WHERE user_id = ?
+         ORDER BY id DESC`
+      )
+      .bind(auth.user.id)
+      .all();
+
+  return json({
+    status: 200,
+    success: true,
+    count: result.results.length,
+    data: result.results
+  });
+}
+
+async function deleteApiKey(request, env, keyId) {
+  const auth =
+    await requireAuth(request, env);
+
+  if (auth.error) {
+    return auth.error;
+  }
+
+  const id =
+    Number(keyId);
+
+  if (!Number.isInteger(id) || id <= 0) {
+    return json({
+      status: 400,
+      success: false,
+      error: "Invalid API key ID"
+    }, 400);
+  }
+
+  const result =
+    await env.chisefrk_db
+      .prepare(
+        `DELETE FROM api_keys
+         WHERE id = ? AND user_id = ?`
+      )
+      .bind(
+        id,
+        auth.user.id
+      )
+      .run();
+
+  if (!result.meta.changes) {
+    return json({
+      status: 404,
+      success: false,
+      error: "API key not found"
+    }, 404);
+  }
+
+  return json({
+    status: 200,
+    success: true,
+    message: "API key revoked successfully"
+  });
+}
+
 async function register(request, env) {
   let body;
 
@@ -498,7 +831,7 @@ export default {
       return new Response(null, {
         headers: {
           "Access-Control-Allow-Origin": "*",
-          "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+          "Access-Control-Allow-Methods": "GET, POST, DELETE, OPTIONS",
           "Access-Control-Allow-Headers": "Content-Type, Authorization"
         }
       });
@@ -506,7 +839,8 @@ export default {
 
     if (
       request.method !== "GET" &&
-      request.method !== "POST"
+      request.method !== "POST" &&
+      request.method !== "DELETE"
     ) {
       return json({
         status: 405,
@@ -608,6 +942,36 @@ export default {
       request.method === "POST"
     ) {
       return login(request, env);
+    }
+
+    if (
+      url.pathname === "/api/keys" &&
+      request.method === "POST"
+    ) {
+      return createApiKey(request, env);
+    }
+
+    if (
+      url.pathname === "/api/keys" &&
+      request.method === "GET"
+    ) {
+      return listApiKeys(request, env);
+    }
+
+    const apiKeyMatch =
+      url.pathname.match(
+        /^\/api\/keys\/(\d+)$/
+      );
+
+    if (
+      apiKeyMatch &&
+      request.method === "DELETE"
+    ) {
+      return deleteApiKey(
+        request,
+        env,
+        apiKeyMatch[1]
+      );
     }
 
     return json({
