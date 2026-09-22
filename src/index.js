@@ -118,7 +118,7 @@ function json(data, status = 200) {
     headers: {
       "Content-Type": "application/json; charset=utf-8",
       "Access-Control-Allow-Origin": "*",
-      "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+      "Access-Control-Allow-Methods": "GET, POST, DELETE, OPTIONS",
       "Access-Control-Allow-Headers": "Content-Type, Authorization"
     }
   });
@@ -485,6 +485,239 @@ function generateApiKey() {
   return `sk-chisefrk-${base64urlEncode(bytes)}`;
 }
 
+
+async function getUserPlan(env, userId) {
+  const plan = await env.chisefrk_db
+    .prepare(
+      `SELECT
+         p.id,
+         p.name,
+         p.max_api_keys,
+         p.requests_per_day,
+         p.tokens_per_month,
+         p.requests_per_minute,
+         p.max_input_tokens,
+         p.max_output_tokens
+       FROM users u
+       JOIN plans p ON p.id = u.plan_id
+       WHERE u.id = ?
+       LIMIT 1`
+    )
+    .bind(userId)
+    .first();
+
+  return plan || {
+    id: 1,
+    name: "free",
+    max_api_keys: 3,
+    requests_per_day: 1000,
+    tokens_per_month: 100000,
+    requests_per_minute: 10,
+    max_input_tokens: 4000,
+    max_output_tokens: 2000
+  };
+}
+
+async function getApiKeyCount(env, userId) {
+  const result = await env.chisefrk_db
+    .prepare(
+      `SELECT COUNT(*) AS count
+       FROM api_keys
+       WHERE user_id = ?`
+    )
+    .bind(userId)
+    .first();
+
+  return Number(result?.count || 0);
+}
+
+async function checkApiKeyLimit(env, userId) {
+  const plan = await getUserPlan(env, userId);
+  const count = await getApiKeyCount(env, userId);
+
+  if (count >= plan.max_api_keys) {
+    return {
+      allowed: false,
+      plan,
+      response: json({
+        status: 429,
+        success: false,
+        error: "API key limit reached",
+        limit: plan.max_api_keys,
+        current: count,
+        plan: plan.name
+      }, 429)
+    };
+  }
+
+  return {
+    allowed: true,
+    plan,
+    current: count
+  };
+}
+
+async function recordUsage(
+  env,
+  {
+    userId,
+    apiKeyId = null,
+    endpoint,
+    method = "GET",
+    inputTokens = 0,
+    outputTokens = 0
+  }
+) {
+  const input =
+    Math.max(0, Number(inputTokens) || 0);
+
+  const output =
+    Math.max(0, Number(outputTokens) || 0);
+
+  const total =
+    input + output;
+
+  await env.chisefrk_db
+    .prepare(
+      `INSERT INTO api_usage (
+         user_id,
+         api_key_id,
+         endpoint,
+         method,
+         request_count,
+         input_tokens,
+         output_tokens,
+         total_tokens
+       )
+       VALUES (?, ?, ?, ?, 1, ?, ?, ?)`
+    )
+    .bind(
+      userId,
+      apiKeyId,
+      endpoint,
+      method,
+      input,
+      output,
+      total
+    )
+    .run();
+}
+
+async function getUsageSummary(env, userId) {
+  const plan = await getUserPlan(env, userId);
+
+  const requestsToday = await env.chisefrk_db
+    .prepare(
+      `SELECT COALESCE(
+         SUM(request_count),
+         0
+       ) AS requests
+       FROM api_usage
+       WHERE user_id = ?
+       AND created_at >= date('now')`
+    )
+    .bind(userId)
+    .first();
+
+  const tokensThisMonth = await env.chisefrk_db
+    .prepare(
+      `SELECT COALESCE(
+         SUM(total_tokens),
+         0
+       ) AS tokens
+       FROM api_usage
+       WHERE user_id = ?
+       AND created_at >= date('now', 'start of month')`
+    )
+    .bind(userId)
+    .first();
+
+  const apiKeys = await getApiKeyCount(
+    env,
+    userId
+  );
+
+  return {
+    plan: {
+      id: plan.id,
+      name: plan.name,
+      limits: {
+        max_api_keys: plan.max_api_keys,
+        requests_per_day: plan.requests_per_day,
+        tokens_per_month: plan.tokens_per_month,
+        requests_per_minute: plan.requests_per_minute,
+        max_input_tokens: plan.max_input_tokens,
+        max_output_tokens: plan.max_output_tokens
+      }
+    },
+    usage: {
+      api_keys: apiKeys,
+      requests_today:
+        Number(requestsToday?.requests || 0),
+      tokens_this_month:
+        Number(tokensThisMonth?.tokens || 0)
+    }
+  };
+}
+
+async function getUsage(request, env) {
+  const auth =
+    await requireAuth(request, env);
+
+  if (auth.error) {
+    return auth.error;
+  }
+
+  const summary =
+    await getUsageSummary(
+      env,
+      auth.user.id
+    );
+
+  return json({
+    status: 200,
+    success: true,
+    data: summary
+  });
+}
+
+async function getPlan(request, env) {
+  const auth =
+    await requireAuth(request, env);
+
+  if (auth.error) {
+    return auth.error;
+  }
+
+  const plan =
+    await getUserPlan(
+      env,
+      auth.user.id
+    );
+
+  return json({
+    status: 200,
+    success: true,
+    data: {
+      id: plan.id,
+      name: plan.name,
+      limits: {
+        max_api_keys: plan.max_api_keys,
+        requests_per_day:
+          plan.requests_per_day,
+        tokens_per_month:
+          plan.tokens_per_month,
+        requests_per_minute:
+          plan.requests_per_minute,
+        max_input_tokens:
+          plan.max_input_tokens,
+        max_output_tokens:
+          plan.max_output_tokens
+      }
+    }
+  });
+}
+
 async function createApiKey(request, env) {
   const auth =
     await requireAuth(request, env);
@@ -520,6 +753,16 @@ async function createApiKey(request, env) {
       success: false,
       error: "API key name must be 50 characters or less"
     }, 400);
+  }
+
+  const keyLimit =
+    await checkApiKeyLimit(
+      env,
+      auth.user.id
+    );
+
+  if (!keyLimit.allowed) {
+    return keyLimit.response;
   }
 
   const apiKey =
@@ -956,6 +1199,20 @@ export default {
       request.method === "GET"
     ) {
       return listApiKeys(request, env);
+    }
+
+    if (
+      url.pathname === "/api/usage" &&
+      request.method === "GET"
+    ) {
+      return getUsage(request, env);
+    }
+
+    if (
+      url.pathname === "/api/plan" &&
+      request.method === "GET"
+    ) {
+      return getPlan(request, env);
     }
 
     const apiKeyMatch =
