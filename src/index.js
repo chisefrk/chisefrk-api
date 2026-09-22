@@ -87,6 +87,17 @@ const endpoints = [
       hex: "#B6FF00",
       rgb: "182, 255, 0"
     }
+  },
+  {
+    method: "POST",
+    endpoint: "/api/auth/register",
+    description: "Create a CHISEFRK account",
+    category: "Authentication",
+    status: "beta",
+    example: {
+      email: "user@example.com",
+      password: "your-password"
+    }
   }
 ];
 
@@ -96,27 +107,174 @@ function json(data, status = 200) {
     headers: {
       "Content-Type": "application/json; charset=utf-8",
       "Access-Control-Allow-Origin": "*",
-      "Access-Control-Allow-Methods": "GET, OPTIONS",
+      "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
       "Access-Control-Allow-Headers": "Content-Type"
     }
   });
 }
 
+function normalizeEmail(email) {
+  return email.trim().toLowerCase();
+}
+
+function isValidEmail(email) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+}
+
+function bytesToHex(bytes) {
+  return [...new Uint8Array(bytes)]
+    .map(byte => byte.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+function hexToBytes(hex) {
+  const bytes = new Uint8Array(hex.length / 2);
+
+  for (let i = 0; i < bytes.length; i++) {
+    bytes[i] = parseInt(
+      hex.slice(i * 2, i * 2 + 2),
+      16
+    );
+  }
+
+  return bytes;
+}
+
+async function hashPassword(password) {
+  const encoder = new TextEncoder();
+
+  const salt = crypto.getRandomValues(
+    new Uint8Array(16)
+  );
+
+  const keyMaterial =
+    await crypto.subtle.importKey(
+      "raw",
+      encoder.encode(password),
+      "PBKDF2",
+      false,
+      ["deriveBits"]
+    );
+
+  const iterations = 100000;
+
+  const derivedBits =
+    await crypto.subtle.deriveBits(
+      {
+        name: "PBKDF2",
+        salt,
+        iterations,
+        hash: "SHA-256"
+      },
+      keyMaterial,
+      256
+    );
+
+  return [
+    "pbkdf2",
+    iterations,
+    bytesToHex(salt),
+    bytesToHex(derivedBits)
+  ].join("$");
+}
+
+async function register(request, env) {
+  let body;
+
+  try {
+    body = await request.json();
+  } catch {
+    return json({
+      status: 400,
+      success: false,
+      error: "Invalid JSON body"
+    }, 400);
+  }
+
+  const email =
+    typeof body.email === "string"
+      ? normalizeEmail(body.email)
+      : "";
+
+  const password =
+    typeof body.password === "string"
+      ? body.password
+      : "";
+
+  if (!email || !isValidEmail(email)) {
+    return json({
+      status: 400,
+      success: false,
+      error: "A valid email is required"
+    }, 400);
+  }
+
+  if (password.length < 8) {
+    return json({
+      status: 400,
+      success: false,
+      error: "Password must be at least 8 characters"
+    }, 400);
+  }
+
+  const existing =
+    await env.chisefrk_db
+      .prepare(
+        "SELECT id FROM users WHERE email = ? LIMIT 1"
+      )
+      .bind(email)
+      .first();
+
+  if (existing) {
+    return json({
+      status: 409,
+      success: false,
+      error: "Email is already registered"
+    }, 409);
+  }
+
+  const passwordHash =
+    await hashPassword(password);
+
+  const result =
+    await env.chisefrk_db
+      .prepare(
+        `INSERT INTO users
+          (email, password_hash)
+         VALUES (?, ?)`
+      )
+      .bind(email, passwordHash)
+      .run();
+
+  return json({
+    status: 201,
+    success: true,
+    message: "Account created successfully",
+    data: {
+      id: result.meta.last_row_id,
+      email
+    }
+  }, 201);
+}
+
 export default {
-  async fetch(request) {
+  async fetch(request, env) {
     const url = new URL(request.url);
 
     if (request.method === "OPTIONS") {
       return new Response(null, {
         headers: {
           "Access-Control-Allow-Origin": "*",
-          "Access-Control-Allow-Methods": "GET, OPTIONS",
+          "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
           "Access-Control-Allow-Headers": "Content-Type"
         }
       });
     }
 
-    if (request.method !== "GET") {
+    if (
+      request.method !== "GET" &&
+      request.method !== "POST"
+    ) {
       return json({
         status: 405,
         success: false,
@@ -135,7 +293,10 @@ export default {
       });
     }
 
-    if (url.pathname === "/api/endpoints") {
+    if (
+      url.pathname === "/api/endpoints" &&
+      request.method === "GET"
+    ) {
       return json({
         status: 200,
         success: true,
@@ -144,9 +305,16 @@ export default {
       });
     }
 
-    if (url.pathname === "/api/random/username") {
+    if (
+      url.pathname === "/api/random/username" &&
+      request.method === "GET"
+    ) {
       const username =
-        usernames[Math.floor(Math.random() * usernames.length)];
+        usernames[
+          Math.floor(
+            Math.random() * usernames.length
+          )
+        ];
 
       return json({
         status: 200,
@@ -157,9 +325,16 @@ export default {
       });
     }
 
-    if (url.pathname === "/api/random/quote") {
+    if (
+      url.pathname === "/api/random/quote" &&
+      request.method === "GET"
+    ) {
       const quote =
-        quotes[Math.floor(Math.random() * quotes.length)];
+        quotes[
+          Math.floor(
+            Math.random() * quotes.length
+          )
+        ];
 
       return json({
         status: 200,
@@ -170,15 +345,29 @@ export default {
       });
     }
 
-    if (url.pathname === "/api/random/color") {
+    if (
+      url.pathname === "/api/random/color" &&
+      request.method === "GET"
+    ) {
       const color =
-        colors[Math.floor(Math.random() * colors.length)];
+        colors[
+          Math.floor(
+            Math.random() * colors.length
+          )
+        ];
 
       return json({
         status: 200,
         success: true,
         data: color
       });
+    }
+
+    if (
+      url.pathname === "/api/auth/register" &&
+      request.method === "POST"
+    ) {
+      return register(request, env);
     }
 
     return json({
