@@ -463,6 +463,125 @@ async function requireAuth(request, env) {
   };
 }
 
+function isApiKeyCredential(value) {
+  return value.startsWith("sk-chisefrk-");
+}
+
+async function authenticateApiKey(request, env) {
+  const header =
+    request.headers.get("Authorization") || "";
+
+  let credential = null;
+
+  if (header.startsWith("Bearer ")) {
+    credential = header.slice(7).trim();
+  } else {
+    credential = request.headers.get("X-API-Key") || "";
+  }
+
+  if (!credential) {
+    return {
+      error: json({
+        status: 401,
+        success: false,
+        error: "API key is required"
+      }, 401)
+    };
+  }
+
+  const keyHash = await hashApiKey(credential);
+
+  const result = await env.chisefrk_db
+    .prepare(
+      `SELECT id, user_id, name
+       FROM api_keys
+       WHERE key_hash = ?
+       LIMIT 1`
+    )
+    .bind(keyHash)
+    .first();
+
+  if (!result) {
+    return {
+      error: json({
+        status: 401,
+        success: false,
+        error: "Invalid credentials"
+      }, 401)
+    };
+  }
+
+  await env.chisefrk_db
+    .prepare(
+      `UPDATE api_keys
+       SET last_used_at = datetime('now')
+       WHERE id = ?`
+    )
+    .bind(result.id)
+    .run();
+
+  return {
+    api_key: {
+      api_key_id: result.id,
+      user_id: result.user_id,
+      key_name: result.name
+    }
+  };
+}
+
+async function requireAuthOrApiKey(request, env) {
+  const header =
+    request.headers.get("Authorization") || "";
+
+  if (header.startsWith("Bearer ")) {
+    const credential = header.slice(7).trim();
+
+    if (credential && isApiKeyCredential(credential)) {
+      const apiResult = await authenticateApiKey(request, env);
+      if (apiResult.error) {
+        return apiResult;
+      }
+      return {
+        auth_type: "api_key",
+        user_id: apiResult.api_key.user_id,
+        api_key_id: apiResult.api_key.api_key_id,
+        key_name: apiResult.api_key.key_name
+      };
+    }
+
+    const jwtResult = await requireAuth(request, env);
+    if (jwtResult.error) {
+      return jwtResult;
+    }
+    return {
+      auth_type: "jwt",
+      user_id: jwtResult.user.id,
+      email: jwtResult.user.email
+    };
+  }
+
+  if (request.headers.has("X-API-Key")) {
+    const apiResult = await authenticateApiKey(request, env);
+    if (apiResult.error) {
+      return apiResult;
+    }
+    return {
+      auth_type: "api_key",
+      user_id: apiResult.api_key.user_id,
+      api_key_id: apiResult.api_key.api_key_id,
+      key_name: apiResult.api_key.key_name
+    };
+  }
+
+  return {
+    error: json({
+      status: 401,
+      success: false,
+      error: "Authentication required"
+    }, 401)
+  };
+}
+
 async function hashApiKey(value) {
   const data =
     new TextEncoder().encode(value);
@@ -660,18 +779,11 @@ async function getUsageSummary(env, userId) {
   };
 }
 
-async function getUsage(request, env) {
-  const auth =
-    await requireAuth(request, env);
-
-  if (auth.error) {
-    return auth.error;
-  }
-
+async function getUsage(request, env, auth) {
   const summary =
     await getUsageSummary(
       env,
-      auth.user.id
+      auth.user_id
     );
 
   return json({
@@ -681,18 +793,11 @@ async function getUsage(request, env) {
   });
 }
 
-async function getPlan(request, env) {
-  const auth =
-    await requireAuth(request, env);
-
-  if (auth.error) {
-    return auth.error;
-  }
-
+async function getPlan(request, env, auth) {
   const plan =
     await getUserPlan(
       env,
-      auth.user.id
+      auth.user_id
     );
 
   return json({
@@ -718,14 +823,7 @@ async function getPlan(request, env) {
   });
 }
 
-async function createApiKey(request, env) {
-  const auth =
-    await requireAuth(request, env);
-
-  if (auth.error) {
-    return auth.error;
-  }
-
+async function createApiKey(request, env, auth) {
   let body = {};
 
   try {
@@ -758,7 +856,7 @@ async function createApiKey(request, env) {
   const keyLimit =
     await checkApiKeyLimit(
       env,
-      auth.user.id
+      auth.user_id
     );
 
   if (!keyLimit.allowed) {
@@ -779,7 +877,7 @@ async function createApiKey(request, env) {
          VALUES (?, ?, ?)`
       )
       .bind(
-        auth.user.id,
+        auth.user_id,
         name,
         keyHash
       )
@@ -798,14 +896,7 @@ async function createApiKey(request, env) {
   }, 201);
 }
 
-async function listApiKeys(request, env) {
-  const auth =
-    await requireAuth(request, env);
-
-  if (auth.error) {
-    return auth.error;
-  }
-
+async function listApiKeys(request, env, auth) {
   const result =
     await env.chisefrk_db
       .prepare(
@@ -818,7 +909,7 @@ async function listApiKeys(request, env) {
          WHERE user_id = ?
          ORDER BY id DESC`
       )
-      .bind(auth.user.id)
+      .bind(auth.user_id)
       .all();
 
   return json({
@@ -829,14 +920,7 @@ async function listApiKeys(request, env) {
   });
 }
 
-async function deleteApiKey(request, env, keyId) {
-  const auth =
-    await requireAuth(request, env);
-
-  if (auth.error) {
-    return auth.error;
-  }
-
+async function deleteApiKey(request, env, keyId, auth) {
   const id =
     Number(keyId);
 
@@ -856,7 +940,7 @@ async function deleteApiKey(request, env, keyId) {
       )
       .bind(
         id,
-        auth.user.id
+        auth.user_id
       )
       .run();
 
@@ -1066,6 +1150,23 @@ async function login(request, env) {
   });
 }
 
+async function recordUsageSafe(env, auth, endpoint, method) {
+  try {
+    await recordUsage(env, {
+      userId: auth.user_id,
+      apiKeyId: auth.api_key_id || null,
+      endpoint,
+      method,
+      inputTokens: 0,
+      outputTokens: 0
+    });
+  } catch (err) {
+    // Usage recording must not fail the main response.
+    // Log and swallow.
+    console.error("Usage recording failed:", err);
+  }
+}
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
@@ -1191,28 +1292,40 @@ export default {
       url.pathname === "/api/keys" &&
       request.method === "POST"
     ) {
-      return createApiKey(request, env);
+      const auth = await requireAuth(request, env);
+      if (auth.error) return auth.error;
+      return createApiKey(request, env, auth);
     }
 
     if (
       url.pathname === "/api/keys" &&
       request.method === "GET"
     ) {
-      return listApiKeys(request, env);
+      const auth = await requireAuthOrApiKey(request, env);
+      if (auth.error) return auth.error;
+      const result = await listApiKeys(request, env, auth);
+      await recordUsageSafe(env, auth, url.pathname, request.method);
+      return result;
     }
 
     if (
       url.pathname === "/api/usage" &&
       request.method === "GET"
     ) {
-      return getUsage(request, env);
+      const auth = await requireAuthOrApiKey(request, env);
+      if (auth.error) return auth.error;
+      return getUsage(request, env, auth);
     }
 
     if (
       url.pathname === "/api/plan" &&
       request.method === "GET"
     ) {
-      return getPlan(request, env);
+      const auth = await requireAuthOrApiKey(request, env);
+      if (auth.error) return auth.error;
+      const result = await getPlan(request, env, auth);
+      await recordUsageSafe(env, auth, url.pathname, request.method);
+      return result;
     }
 
     const apiKeyMatch =
@@ -1224,11 +1337,16 @@ export default {
       apiKeyMatch &&
       request.method === "DELETE"
     ) {
-      return deleteApiKey(
+      const auth = await requireAuthOrApiKey(request, env);
+      if (auth.error) return auth.error;
+      const result = await deleteApiKey(
         request,
         env,
-        apiKeyMatch[1]
+        apiKeyMatch[1],
+        auth
       );
+      await recordUsageSafe(env, auth, url.pathname, request.method);
+      return result;
     }
 
     return json({
